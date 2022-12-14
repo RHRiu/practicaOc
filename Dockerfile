@@ -7,8 +7,6 @@ RUN \
     cd $JAVA_HOME/jre/lib/security \
     && keytool -keystore cacerts -storepass changeit -noprompt -trustcacerts -importcert -alias fortiriu -file /app/fortiriu.cer
 	
-RUN mvn clean install
+RUN mvn -Duser.home=/var/maven clean install
 
-
-
-CMD mvn spring-boot:run
+CMD java -jar target/spring-boot-hibernate-dc-0.0.1-SNAPSHOT.jar
