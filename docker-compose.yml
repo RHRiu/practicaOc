@@ -1,0 +1,114 @@
+version: "3.8"
+
+services:
+  mysqldb:
+    image: mysql:8
+    restart: unless-stopped
+    env_file: ./.env
+    environment:
+      - MYSQL_USER=${MYSQLDB_USER}
+      - MYSQL_ROOT_PASSWORD=${MYSQLDB_ROOT_PASSWORD}
+      - MYSQL_PASSWORD=${MYSQLDB_PASSWORD}
+      - MYSQL_DATABASE=${MYSQLDB_DATABASE}
+    ports:
+      - $MYSQLDB_LOCAL_PORT:$MYSQLDB_DOCKER_PORT
+    volumes:
+      - db:/var/lib/mysql
+  prometheus:
+    image: prom/prometheus
+    restart: always
+    volumes:
+      - ./prometheus:/etc/prometheus/
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    ports:
+      - 9090:9090
+    links:
+      - cadvisor:cadvisor
+      - alertmanager:alertmanager
+    depends_on:
+      - cadvisor
+
+  node-exporter:
+    image: prom/node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - --collector.filesystem.ignored-mount-points
+      - '^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)'
+    ports:
+      - 9100:9100
+    restart: always
+    deploy:
+      mode: global
+
+  alertmanager:
+    image: prom/alertmanager
+    restart: always
+    ports:
+      - 9093:9093
+    volumes:
+      - ./alertmanager/:/etc/alertmanager/
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--storage.path=/alertmanager'
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - 8080:8080
+    restart: always
+    deploy:
+      mode: global
+
+  grafana:
+    image: grafana/grafana
+    user: '472'
+    restart: always
+    environment:
+      GF_INSTALL_PLUGINS: 'grafana-clock-panel,grafana-simple-json-datasource'
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/:/etc/grafana/provisioning/
+    env_file:
+      - ./grafana/config.monitoring
+    ports:
+      - 3000:3000
+    depends_on:
+      - prometheus  
+  app:
+    depends_on:
+      - mysqldb
+    build: .
+    restart: on-failure
+    env_file: .env
+    ports:
+      - $SPRING_LOCAL_PORT:$SPRING_DOCKER_PORT
+    environment:
+      - DATASOURCE_URL=jdbc:mysql://mysqldb:$MYSQLDB_DOCKER_PORT/$MYSQLDB_DATABASE?allowPublicKeyRetrieval=true&useSSL=false
+      - DATASOURCE_USER=${MYSQLDB_USER}
+      - DATASOURCE_PASSWORD=${MYSQLDB_PASSWORD}
+      - DATASOURCE_DIALECT=${DATABASE_DIALECT}
+      - DATASOURCE_DDL_MANAGEMENT_POLICY=${DATABASE_DDL_POLICY}
+      - SPRING_DOCKER_PORT=${SPRING_DOCKER_PORT}
+    volumes:
+      - .m2:/root/.m2
+      - .:/app
+      
+    stdin_open: true
+    tty: true	
+volumes:
+  db:

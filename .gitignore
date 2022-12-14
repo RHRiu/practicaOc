@@ -1,0 +1,12 @@
+
+.m2/
+
+.project
+
+.classpath
+
+.settings/
+
+target/classes/
+
+target/maven-status/maven-compiler-plugin/compile/default-compile/
